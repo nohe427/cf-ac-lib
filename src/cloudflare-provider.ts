@@ -29,6 +29,21 @@ const readyTurnstile = new Promise(resolve => {
 let token: AppCheckToken | null = null;
 let tokenExpireTimeMillis = 0;
 
+function getTurnstileWidgetId(turnstileDiv: HTMLElement | null) {
+  if (turnstileDiv === null) {
+    throw new Error('Turnstile div not found');
+  }
+  const widgetElm = turnstileDiv.getElementsByTagName('iframe')[0];
+  if (widgetElm === null) {
+    throw new Error('Turnstile widget not found');
+  }
+  const widgetId = widgetElm.getAttribute('id');
+  if (widgetId === null) {
+    throw new Error('Turnstile widget id not found');
+  }
+  return widgetId;
+}
+
 function getTokenConstructor(tokenExchangeUrl: string) {
   return async function getToken(): Promise<{
     readonly token: string;
@@ -41,7 +56,9 @@ function getTokenConstructor(tokenExchangeUrl: string) {
     console.log('Getting app check token');
     await readyTurnstile;
     console.log('Turnstile ready');
-    const cloudFlareToken = turnstile.getResponse(turnstileDivId);
+    const turnstileDiv = document.getElementById(turnstileDivId);
+    const widgetId = getTurnstileWidgetId(turnstileDiv);
+    const cloudFlareToken = turnstile.getResponse(widgetId);
     console.log('turnstile response', cloudFlareToken);
     // can't use callables, so we want to deploy an http method.
     // https://github.com/firebase/firebase-js-sdk/issues/6176
@@ -64,7 +81,7 @@ function getTokenConstructor(tokenExchangeUrl: string) {
     token = appCheckToken as AppCheckToken;
     tokenExpireTimeMillis = Date.now() + 1000 * 60 * 60; // appCheckToken.expireTimeMillis;
     console.log('appchecktokenacquired', appCheckToken);
-    turnstile.reset(turnstileDivId);
+    turnstile.reset(widgetId);
     return appCheckToken as AppCheckToken;
   };
 }
@@ -75,7 +92,7 @@ export class CloudFlareProvider extends CustomProvider {
     private _tokenExchangeUrl: string
   ) {
     const getToken = getTokenConstructor(_tokenExchangeUrl);
-    super({getToken});
+    super({getToken: getToken});
     const body: HTMLElement = document.body;
     const turnstileElement = this.makeDiv();
     body.appendChild(turnstileElement);
