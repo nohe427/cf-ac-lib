@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {AppCheckToken, CustomProvider} from 'firebase/app-check';
+import {AppCheckToken, CustomProviderOptions} from 'firebase/app-check';
 
 const CLOUDFLARE_URL =
   'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onloadTurnstileCallback';
@@ -44,8 +44,60 @@ function getTurnstileWidgetId(turnstileDiv: HTMLElement | null) {
   return widgetId;
 }
 
-function getTokenConstructor(tokenExchangeUrl: string) {
-  return async function getToken(): Promise<{
+export class CloudFlareProviderOptions implements CustomProviderOptions {
+  constructor(
+    private _tokenExchangeUrl: string,
+    private _siteKey: string
+  ) {
+    const body: HTMLElement = document.body;
+    const turnstileElement = this.makeDiv();
+    body.appendChild(turnstileElement);
+    body.appendChild(this.makeScript());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).onloadTurnstileCallback = () => {
+      turnstile.render(turnstileElement, {
+        sitekey: this._siteKey,
+        callback: (token: string) => {
+          console.log(`Challenge Result: ${token}`);
+          promiseResolve(true);
+        },
+      });
+    };
+  }
+
+  private makeDiv() {
+    const div = document.createElement('div');
+    div.id = turnstileDivId;
+    div.className = turnstileClassName;
+    div.setAttribute('style', 'display: none;');
+    return div;
+  }
+
+  private makeScript() {
+    const script = document.createElement('script');
+    script.src = CLOUDFLARE_URL;
+    return script;
+  }
+
+  getSiteKey(): string {
+    return this._siteKey;
+  }
+
+  async getToken(): Promise<{
+    readonly token: string;
+    readonly expireTimeMillis: number;
+  }> {
+    return this.renderAndExchange(true);
+  }
+
+  async getLimitedUseToken(): Promise<{
+    readonly token: string;
+    readonly expireTimeMillis: number;
+  }> {
+    return this.renderAndExchange(true);
+  }
+
+  private async renderAndExchange(limitedUse: boolean): Promise<{
     readonly token: string;
     readonly expireTimeMillis: number;
   }> {
@@ -64,9 +116,14 @@ function getTokenConstructor(tokenExchangeUrl: string) {
     // https://github.com/firebase/firebase-js-sdk/issues/6176
     // const tokenExchange = httpsCallable(functions, "fetchAppCheckToken");
     console.log('Starting exchange');
-    const result = await fetch(tokenExchangeUrl, {
+    // Sending limitedUseToken in the request for future limitedUseToken
+    // specifiers in the admin sdk.
+    const result = await fetch(this._tokenExchangeUrl, {
       method: 'POST',
-      body: JSON.stringify({cloudflaretoken: cloudFlareToken}),
+      body: JSON.stringify({
+        cloudflaretoken: cloudFlareToken,
+        limiteduse: limitedUse,
+      }),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -83,43 +140,5 @@ function getTokenConstructor(tokenExchangeUrl: string) {
     console.log('appchecktokenacquired', appCheckToken);
     turnstile.reset(widgetId);
     return appCheckToken as AppCheckToken;
-  };
-}
-
-export class CloudFlareProvider extends CustomProvider {
-  constructor(
-    private _siteKey: string,
-    private _tokenExchangeUrl: string
-  ) {
-    const getToken = getTokenConstructor(_tokenExchangeUrl);
-    super({getToken: getToken});
-    const body: HTMLElement = document.body;
-    const turnstileElement = this.makeDiv();
-    body.appendChild(turnstileElement);
-    body.appendChild(this.makeScript());
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).onloadTurnstileCallback = () => {
-      turnstile.render(turnstileElement, {
-        sitekey: this._siteKey,
-        callback: (token: string) => {
-          console.log(`Challenge Result: ${token}`);
-          promiseResolve(true);
-        },
-      });
-    };
-  }
-
-  makeDiv() {
-    const div = document.createElement('div');
-    div.id = turnstileDivId;
-    div.className = turnstileClassName;
-    div.setAttribute('style', 'display: none;');
-    return div;
-  }
-
-  makeScript() {
-    const script = document.createElement('script');
-    script.src = CLOUDFLARE_URL;
-    return script;
   }
 }

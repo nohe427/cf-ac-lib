@@ -14,6 +14,6 @@
  * limitations under the License.
  */
 
-import {CloudFlareProvider} from './cloudflare-provider';
+import {CloudFlareProviderOptions} from './cloudflare-provider';
 
-export {CloudFlareProvider};
+export {CloudFlareProviderOptions};
